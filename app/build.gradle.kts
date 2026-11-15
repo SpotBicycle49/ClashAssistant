@@ -17,6 +17,17 @@ android {
         versionName = "0.2.0"
     }
 
+    // Постоянный ключ подписи: обновления ставятся поверх старой версии без удаления
+    // (иначе GitHub Actions подписывал бы каждую сборку новым случайным ключом).
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("clash-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
