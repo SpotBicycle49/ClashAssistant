@@ -64,3 +64,11 @@ dependencies {
 
     testImplementation(libs.junit)
 }
+
+// Подробный вывод тестов в лог сборки (видно в GitHub Actions)
+tasks.withType<Test>().configureEach {
+    testLogging {
+        events("passed", "failed", "skipped")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}
