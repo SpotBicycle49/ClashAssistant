@@ -13,8 +13,8 @@ android {
         applicationId = "com.clashassistant"
         minSdk = 28
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
     }
 
     // Постоянный ключ подписи: обновления ставятся поверх старой версии без удаления

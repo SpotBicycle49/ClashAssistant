@@ -63,6 +63,8 @@ data class RecognitionStats(
     val byHand: Int,
     val ambiguous: Int,
     val unknown: Int,
+    /** Розыгрыши, найденные по смене «След.» без видимого падения эликсира (например, под уведомлением). */
+    val hidden: Int,
     val abilities: Int,
     val clusters: Int,
     val autoLabeled: Int,
@@ -137,14 +139,32 @@ class MatchViewModel(app: Application) : AndroidViewModel(app) {
     private val _rules = MutableStateFlow(rulesStore.load())
     val rules: StateFlow<ElixirRules> = _rules.asStateFlow()
 
-    private data class EngineInput(val events: List<PlayEvent>, val start: Float, val length: Float, val startElixir: Float?)
+    private data class EngineInput(
+        val events: List<PlayEvent>,
+        val start: Float,
+        val length: Float,
+        val startElixir: Float?,
+        /** Подписи карт соперника: кластер → карта (нужны, если стоимость розыгрыша не была видна). */
+        val labels: Map<Int, String>,
+    )
 
     val timeline: StateFlow<ElixirTimeline> = combine(
-        _state.map { s -> EngineInput(s.events, s.matchStartVideoSec, s.timelineLengthSec - s.matchStartVideoSec, s.startElixir) }
-            .distinctUntilChanged(),
+        _state.map { s ->
+            EngineInput(
+                s.events, s.matchStartVideoSec, s.timelineLengthSec - s.matchStartVideoSec, s.startElixir,
+                s.clusters.mapNotNull { c -> c.cardId?.let { c.id to it } }.toMap(),
+            )
+        }.distinctUntilChanged(),
         _rules,
     ) { input, rules ->
-        val shifted = input.events.map { it.copy(timeSec = it.timeSec - input.start) }.filter { it.timeSec >= 0f }
+        val shifted = input.events.map { e ->
+            e.copy(
+                timeSec = e.timeSec - input.start,
+                candidates = e.candidates.map { c ->
+                    CardIds.clusterOf(c.cardId)?.let { input.labels[it] }?.let { id -> c.copy(cardId = id) } ?: c
+                },
+            )
+        }.filter { it.timeSec >= 0f }
         val end = max(max(input.length, 1f), (shifted.maxOfOrNull { it.timeSec } ?: 0f) + 1f)
         val effective = input.startElixir?.let { rules.copy(startElixir = it) } ?: rules
         ElixirEngine(effective, CardCatalog::byId).compute(shifted, end)
@@ -325,6 +345,7 @@ class MatchViewModel(app: Application) : AndroidViewModel(app) {
             byHand = det.plays.count { it.method == IdMethod.HAND && it.clusterCandidates.size == 1 },
             ambiguous = det.plays.count { it.clusterCandidates.size > 1 },
             unknown = det.plays.count { it.method == IdMethod.UNKNOWN },
+            hidden = det.plays.count { it.virtual },
             abilities = det.plays.count { it.method == IdMethod.ABILITY },
             clusters = clusters.size,
             autoLabeled = autoLabeled,

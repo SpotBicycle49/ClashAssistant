@@ -277,6 +277,7 @@ private fun AutoRecognitionCard(state: MatchUiState, onStart: () -> Unit, onCanc
                 "по циклу колоды: ${s.byCycle} • по руке и стоимости: ${s.byHand}" +
                     (if (s.ambiguous > 0) " • неоднозначно: ${s.ambiguous}" else "") +
                     (if (s.unknown > 0) " • не определено: ${s.unknown}" else "") +
+                    (if (s.hidden > 0) " • под уведомлением: ${s.hidden}" else "") +
                     (if (s.abilities > 0) " • способности: ${s.abilities}" else ""),
                 style = MaterialTheme.typography.bodySmall,
             )

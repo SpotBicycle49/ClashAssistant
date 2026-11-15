@@ -13,10 +13,17 @@ import kotlin.math.min
 object ReplayLayout {
     const val REF_WIDTH = 720f
 
-    /** Значок-капля с числом эликсира соперника (проверка, что на экране повтор). */
+    /** Значок-капля с числом эликсира соперника. */
     val elixirDrop = intArrayOf(28, 85, 62, 120)
-    /** Полоска эликсира соперника. */
-    val elixirBar = intArrayOf(68, 100, 692, 112)
+    /** Надпись «След.:» под картой «След.» — признак, что на экране повтор (в меню её нет). */
+    val nextLabel = intArrayOf(18, 222, 66, 236)
+    /**
+     * Верхние ряды полоски эликсира соперника. Нижние ряды не берём: туда заходят
+     * «язычки» над картами соперника и завышают показание.
+     */
+    val elixirBar = intArrayOf(68, 96, 692, 104)
+    /** Значок стоимости карты «След.»: фиолетовый — карта цветная, серый — карта ещё «перезаряжается». */
+    val nextBadge = intArrayOf(29, 208, 43, 222)
     /** Центр рисунка карты «След.» (без рамки и значка стоимости). */
     val nextCore = intArrayOf(25, 167, 63, 206)
     /** Карта «След.» целиком — для миниатюры. */
@@ -33,11 +40,17 @@ class FeatureExtractor {
 
     fun extract(bmp: Bitmap, timeSec: Float): FrameFeature {
         val s = bmp.width / ReplayLayout.REF_WIDTH
+        val label = whiteFraction(bmp, ReplayLayout.nextLabel, s)
+        val (elixir, saturation) = elixirLevel(bmp, s)
+        // Панель повтора видна, если есть надпись «След.:» и полоска эликсира цветная
+        // (уведомление телефона закрывает её серым баннером — насыщенность падает до ~10).
+        val panel = if (label > 0.02f && saturation > 25f) magentaFraction(bmp, ReplayLayout.elixirDrop, s, 120) else 0f
         return FrameFeature(
             timeSec = timeSec,
-            panel = panelScore(bmp, s),
-            elixir = elixirLevel(bmp, s),
+            panel = panel,
+            elixir = elixir,
             next = nextVector(bmp, s),
+            nextColor = magentaFraction(bmp, ReplayLayout.nextBadge, s, 100),
         )
     }
 
@@ -54,42 +67,55 @@ class FeatureExtractor {
         return intArrayOf(w, h)
     }
 
-    private fun panelScore(bmp: Bitmap, s: Float): Float {
-        val (w, h) = region(bmp, ReplayLayout.elixirDrop, s) ?: return 0f
+    private fun magentaFraction(bmp: Bitmap, r: IntArray, s: Float, maxGreen: Int): Float {
+        val (w, h) = region(bmp, r, s) ?: return 0f
         var cnt = 0
         for (i in 0 until w * h) {
             val c = buf[i]
-            val r = (c shr 16) and 0xFF
-            val g = (c shr 8) and 0xFF
-            val b = c and 0xFF
-            if (r > 120 && b > 120 && g < 120) cnt++
+            if (((c shr 16) and 0xFF) > 120 && (c and 0xFF) > 120 && ((c shr 8) and 0xFF) < maxGreen) cnt++
+        }
+        return cnt.toFloat() / (w * h)
+    }
+
+    private fun whiteFraction(bmp: Bitmap, r: IntArray, s: Float): Float {
+        val (w, h) = region(bmp, r, s) ?: return 0f
+        var cnt = 0
+        for (i in 0 until w * h) {
+            val c = buf[i]
+            if (((c shr 16) and 0xFF) > 200 && ((c shr 8) and 0xFF) > 200 && (c and 0xFF) > 200) cnt++
         }
         return cnt.toFloat() / (w * h)
     }
 
     /**
      * Полоска: заполненные деления яркие, текущее деление заполняется тусклым цветом, пустое — тёмное.
-     * Уровень = самый правый «не тёмный» столбец непрерывной заливки слева (разрывы до 40 px терпим:
-     * разделители делений и значок, который появляется поверх полоски).
+     * Уровень = самый правый «не тёмный» столбец непрерывной заливки слева (разрывы до 6 px терпим).
+     * Заодно считаем насыщенность полоски: под уведомлением телефона она почти серая.
+     * Возвращает (эликсир, насыщенность).
      */
-    private fun elixirLevel(bmp: Bitmap, s: Float): Float {
-        val (w, h) = region(bmp, ReplayLayout.elixirBar, s) ?: return 0f
-        val maxGap = (40 * s).toInt()
+    private fun elixirLevel(bmp: Bitmap, s: Float): Pair<Float, Float> {
+        val (w, h) = region(bmp, ReplayLayout.elixirBar, s) ?: return 0f to 0f
+        val maxGap = max(1, (6 * s).toInt())
         var last = -1
         var gap = 0
+        var stopped = false
+        var satSum = 0f
         for (x in 0 until w) {
-            var sum = 0
+            var sr = 0; var sg = 0; var sb = 0
             for (y in 0 until h) {
                 val c = buf[y * w + x]
-                sum += ((c shr 16) and 0xFF) + ((c shr 8) and 0xFF) + (c and 0xFF)
+                sr += (c shr 16) and 0xFF; sg += (c shr 8) and 0xFF; sb += c and 0xFF
             }
-            val lum = sum / (3f * h)
+            val mr = sr.toFloat() / h; val mg = sg.toFloat() / h; val mb = sb.toFloat() / h
+            satSum += max(mr, max(mg, mb)) - min(mr, min(mg, mb))
+            if (stopped) continue
+            val lum = (mr + mg + mb) / 3f
             if (lum > 60f) { last = x; gap = 0 } else {
                 gap++
-                if (gap > maxGap) break
+                if (gap > maxGap) stopped = true
             }
         }
-        return 10f * (last + 1) / w
+        return 10f * (last + 1) / w to satSum / w
     }
 
     private fun nextVector(bmp: Bitmap, s: Float): FloatArray {
