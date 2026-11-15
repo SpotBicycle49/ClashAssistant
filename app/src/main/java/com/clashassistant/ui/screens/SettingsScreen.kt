@@ -34,6 +34,7 @@ import com.clashassistant.ui.theme.ErrorRed
 @Composable
 fun SettingsScreen(vm: MatchViewModel) {
     val rules by vm.rules.collectAsStateWithLifecycle()
+    val libraryCount by vm.libraryCount.collectAsStateWithLifecycle()
     var start by remember(rules) { mutableStateOf(rules.startElixir.toString()) }
     var max by remember(rules) { mutableStateOf(rules.maxElixir.toString()) }
     var spe by remember(rules) { mutableStateOf(rules.secondsPerElixir.toString()) }
@@ -74,11 +75,16 @@ fun SettingsScreen(vm: MatchViewModel) {
                 }
             }
         }
+        SectionCard("Библиотека образцов карт") {
+            Text("Сохранено образцов: $libraryCount. Они появляются, когда вы подписываете карты соперника, и позволяют узнавать карты автоматически.")
+            Spacer(Modifier.height(6.dp))
+            OutlinedButton(onClick = vm::clearLibrary, enabled = libraryCount > 0) { Text("Очистить библиотеку") }
+        }
         SectionCard("О приложении") {
-            Text("Версия 0.1.0. Все данные хранятся только на этом телефоне, интернет не используется.")
+            Text("Версия 0.2.0. Все данные хранятся только на этом телефоне, интернет не используется.")
             Spacer(Modifier.height(6.dp))
             Text(
-                "Не реализовано пока: автоматическое распознавание карт, учёт Сборщика эликсира, режимы 2×2 и особые режимы.",
+                "Не реализовано пока: распознавание записей своих боёв (где не видна рука соперника), учёт Сборщика эликсира, режимы 2×2.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

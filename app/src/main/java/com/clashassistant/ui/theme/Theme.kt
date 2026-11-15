@@ -15,6 +15,7 @@ val LightViolet = Color(0xFFC4A8FF)
 val Violet = Color(0xFF8E6CFF)
 val SoftBlue = Color(0xFF5C7CFF)
 val Warning = Color(0xFFFFB86B)
+val Cyan = Color(0xFF4FD1FF)
 val ErrorRed = Color(0xFFFF6B8A)
 
 private val Scheme = darkColorScheme(

@@ -73,6 +73,14 @@ class ElixirEngineTest {
         assertEquals(4, tl.plays[1].maxCost)
     }
 
+    @Test fun observedCostOverridesCatalog() {
+        // Стоимость из повтора важнее базы: нераспознанная карта с увиденной стоимостью 6.
+        val e = PlayEvent(1, 20f, listOf(CardCandidate("cluster:3", 1f)), confirmed = false, observedCost = 6)
+        val tl = engine.compute(listOf(e), 25f)
+        assertEquals(4f, tl.plays.single().after.expected, eps)
+        assertEquals(0, tl.skippedEvents)
+    }
+
     @Test fun unknownCardIsSkipped() {
         val tl = engine.compute(listOf(play(1, 5f, "no_such_card" to 1f)), 10f)
         assertEquals(1, tl.skippedEvents)

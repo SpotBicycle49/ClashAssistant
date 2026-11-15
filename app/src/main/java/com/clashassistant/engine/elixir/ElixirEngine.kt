@@ -119,6 +119,8 @@ class ElixirEngine(
     }
 
     private fun resolveCost(event: PlayEvent, previous: CostRange?): CostRange? {
+        // Стоимость, увиденная в повторе, точнее любой оценки по базе карт.
+        event.observedCost?.let { c -> return CostRange(c, c, c.toFloat()) }
         val options = event.candidates.mapNotNull { cand ->
             val card = cardLookup(cand.cardId) ?: return@mapNotNull null
             if (cand.probability <= 0f) return@mapNotNull null

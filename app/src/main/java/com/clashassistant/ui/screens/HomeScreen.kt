@@ -36,7 +36,7 @@ fun HomeScreen(vm: MatchViewModel, onNavigate: (Tab) -> Unit) {
     ) {
         Text("Clash Assistant", style = MaterialTheme.typography.headlineMedium, color = LightViolet)
         Text(
-            "Разбор записей матчей Clash Royale после игры: карты соперника, цикл колоды и расчётный эликсир.",
+            "Разбор повторов Clash Royale после игры: карты соперника, цикл колоды и эликсир — автоматически.",
             style = MaterialTheme.typography.bodyMedium,
         )
 
@@ -55,12 +55,14 @@ fun HomeScreen(vm: MatchViewModel, onNavigate: (Tab) -> Unit) {
         }
 
         SectionCard("Что уже работает") {
-            Status(true, "Импорт видео и покадровый просмотр")
-            Status(true, "Ручная отметка и исправление карт соперника")
+            Status(true, "Автораспознавание повторов: розыгрыши, стоимость, карты, начало боя")
+            Status(true, "Фактический эликсир соперника из повтора и точность расчёта")
+            Status(true, "Подпись карт один раз — дальше узнаются сами")
             Status(true, "Расчёт эликсира с диапазоном неопределённости")
             Status(true, "Восстановление колоды и цикла карт")
+            Status(true, "Ручная разметка и исправление ошибок")
             Status(true, "История матчей (хранится на телефоне)")
-            Status(false, "Автоматическое распознавание карт — в разработке")
+            Status(false, "Записи своих боёв (без видимой руки соперника) — только вручную")
         }
 
         SectionCard("Правила использования") {

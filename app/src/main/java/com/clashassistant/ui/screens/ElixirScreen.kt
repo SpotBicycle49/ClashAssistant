@@ -34,7 +34,9 @@ fun ElixirScreen(vm: MatchViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
     val timeline by vm.timeline.collectAsStateWithLifecycle()
     val rules by vm.rules.collectAsStateWithLifecycle()
+    val accuracy by vm.accuracy.collectAsStateWithLifecycle()
     val now = state.positionMatchSec
+    val actual = state.elixirSeries.map { (it.videoTimeSec - state.matchStartVideoSec) to it.elixir }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -49,6 +51,9 @@ fun ElixirScreen(vm: MatchViewModel) {
                 } else {
                     Text("≈ ${formatElixir(p.expected)}", style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.primary)
                     Text("Возможный диапазон: ${formatElixir(p.low)} – ${formatElixir(p.high)}")
+                    state.elixirSeries.lastOrNull { it.videoTimeSec <= state.positionVideoSec }
+                        ?.takeIf { state.positionVideoSec - it.videoTimeSec <= 1f }
+                        ?.let { Text("Факт из повтора: ${formatElixir(it.elixir)}", color = com.clashassistant.ui.theme.Cyan) }
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -60,14 +65,32 @@ fun ElixirScreen(vm: MatchViewModel) {
         }
         item {
             SectionCard("График") {
-                ElixirChart(timeline, rules, currentMatchSec = now)
+                ElixirChart(timeline, rules, currentMatchSec = now, actual = actual)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Полоса — возможный диапазон, линия — ожидаемое значение. Синий пунктир — начало двойного эликсира, " +
-                        "оранжевый — тройного. Красные точки — розыгрыши, на которые по модели не хватало эликсира.",
+                    "Полоса — возможный диапазон, фиолетовая линия — расчёт" +
+                        (if (actual.isNotEmpty()) ", голубая — фактический эликсир из повтора" else "") +
+                        ". Синий пунктир — начало двойного эликсира, оранжевый — тройного. " +
+                        "Красные точки — розыгрыши, на которые по модели не хватало эликсира.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                accuracy?.let { a ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Точность расчёта по повтору: средняя ошибка ${formatElixir(a.meanAbsError)} эл., " +
+                            "в пределах ±1 эликсира — ${(a.withinOne * 100).toInt()}% времени.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                state.startElixir?.let {
+                    Text(
+                        "Стартовый эликсир соперника по повтору: ${formatElixir(it)} (используется в расчёте этого матча).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 if (timeline.skippedEvents > 0) {
                     Text("Пропущено событий с неизвестной картой: ${timeline.skippedEvents}", color = ErrorRed)
                 }
@@ -76,12 +99,12 @@ fun ElixirScreen(vm: MatchViewModel) {
         item { Text("Розыгрыши", style = MaterialTheme.typography.titleMedium) }
         if (timeline.plays.isEmpty()) item { Text("Пока нет розыгрышей после начала боя.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         items(timeline.plays, key = { it.event.id }) { play ->
-            val card = play.event.topCandidate?.let { CardCatalog.byId(it.cardId) }
+            val name = play.event.topCandidate?.let { state.displayName(it.cardId) } ?: "?"
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 CostBadge(if (play.minCost == play.maxCost) play.minCost.toString() else "${play.minCost}-${play.maxCost}")
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("${formatTime(play.event.timeSec)}  ${card?.name ?: "?"}")
+                    Text("${formatTime(play.event.timeSec)}  $name")
                     Text(
                         "было ≈${formatElixir(play.before.expected)} → стало ≈${formatElixir(play.after.expected)}",
                         style = MaterialTheme.typography.bodySmall,

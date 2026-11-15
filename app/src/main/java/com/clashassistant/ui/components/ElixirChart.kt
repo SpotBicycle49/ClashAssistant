@@ -14,12 +14,14 @@ import androidx.compose.ui.unit.dp
 import com.clashassistant.engine.elixir.ElixirRules
 import com.clashassistant.engine.elixir.ElixirTimeline
 import com.clashassistant.ui.theme.ErrorRed
+import com.clashassistant.ui.theme.Cyan
 import com.clashassistant.ui.theme.SoftBlue
 import com.clashassistant.ui.theme.Warning
 
 /**
  * График предполагаемого эликсира: полоса — интервал [мин; макс], линия — ожидаемое значение,
- * точки — розыгрыши (красные — противоречие модели), вертикальная линия — текущий момент.
+ * голубая линия — фактический эликсир из повтора, точки — розыгрыши (красные — противоречие модели),
+ * вертикальная линия — текущий момент.
  */
 @Composable
 fun ElixirChart(
@@ -27,6 +29,8 @@ fun ElixirChart(
     rules: ElixirRules,
     currentMatchSec: Float?,
     modifier: Modifier = Modifier,
+    /** Фактический эликсир из повтора: (время боя, эликсир). */
+    actual: List<Pair<Float, Float>> = emptyList(),
 ) {
     val bandColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
     val lineColor = MaterialTheme.colorScheme.primary
@@ -66,6 +70,18 @@ fun ElixirChart(
             pts.forEach { lineTo(x(it.timeSec), y(it.expected)) }
         }
         drawPath(line, lineColor, style = Stroke(width = 4f))
+
+        // Факт из повтора (голубая линия, с разрывами там, где панель не была видна)
+        if (actual.isNotEmpty()) {
+            val fact = Path()
+            var prevT = Float.NEGATIVE_INFINITY
+            actual.forEach { (t, v) ->
+                if (t < 0f || t > end) return@forEach
+                if (t - prevT > 1.5f) fact.moveTo(x(t), y(v)) else fact.lineTo(x(t), y(v))
+                prevT = t
+            }
+            drawPath(fact, Cyan, style = Stroke(width = 3f))
+        }
 
         // Розыгрыши
         timeline.plays.forEach { p ->

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,16 +23,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,8 +48,11 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.clashassistant.MatchUiState
 import com.clashassistant.MatchViewModel
 import com.clashassistant.data.cards.CardCatalog
+import com.clashassistant.model.IdMethod
+import com.clashassistant.model.PlayEvent
 import com.clashassistant.ui.components.CardPickerDialog
 import com.clashassistant.ui.components.CostBadge
 import com.clashassistant.ui.components.ScreenTitle
@@ -53,6 +60,7 @@ import com.clashassistant.ui.components.SectionCard
 import com.clashassistant.ui.components.formatElixir
 import com.clashassistant.ui.components.formatTime
 import com.clashassistant.ui.theme.ErrorRed
+import com.clashassistant.ui.theme.Warning
 
 @Composable
 fun AnalysisScreen(vm: MatchViewModel) {
@@ -60,6 +68,7 @@ fun AnalysisScreen(vm: MatchViewModel) {
     val timeline by vm.timeline.collectAsStateWithLifecycle()
     var pickerForNew by remember { mutableStateOf(false) }
     var editingEventId by remember { mutableStateOf<Long?>(null) }
+    var confirmAuto by remember { mutableStateOf(false) }
 
     val pickVideo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.openVideo(uri)
@@ -78,7 +87,7 @@ fun AnalysisScreen(vm: MatchViewModel) {
             SectionCard("Видеозапись") {
                 if (!state.hasVideo) {
                     Text(
-                        "Выберите запись матча из памяти телефона. Можно размечать и без видео — " +
+                        "Выберите запись повтора из журнала боёв. Можно размечать и без видео — " +
                             "тогда шкала будет 5 минут от начала боя.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -112,6 +121,11 @@ fun AnalysisScreen(vm: MatchViewModel) {
             }
         }
 
+        // ----- Автораспознавание -----
+        if (state.hasVideo) {
+            item { AutoRecognitionCard(state, onStart = { if (state.events.isNotEmpty()) confirmAuto = true else vm.startAutoAnalysis() }, onCancel = vm::cancelAnalysis) }
+        }
+
         // ----- Шкала времени -----
         item {
             SectionCard("Позиция") {
@@ -139,26 +153,28 @@ fun AnalysisScreen(vm: MatchViewModel) {
                 timeline.estimateAt(state.positionMatchSec.coerceAtLeast(0f))?.let { p ->
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "Эликсир соперника сейчас: ≈${formatElixir(p.expected)}  (от ${formatElixir(p.low)} до ${formatElixir(p.high)})",
+                        "Расчёт эликсира соперника: ≈${formatElixir(p.expected)}  (от ${formatElixir(p.low)} до ${formatElixir(p.high)})",
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
+                actualAt(state)?.let { fact ->
+                    Text("Факт из повтора: ${formatElixir(fact)}", style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
 
-        // ----- Разметка -----
+        // ----- Ручная разметка -----
         item {
-            SectionCard("Карты соперника") {
+            SectionCard("Розыгрыши соперника") {
                 Text(
-                    "Автоматическое распознавание пока не реализовано — нужен образец записи. " +
-                        "Сейчас карты отмечаются вручную: найдите кадр, где соперник сыграл карту, и нажмите кнопку.",
+                    "Если что-то распознано неверно — нажмите карандаш у события. Можно добавить розыгрыш вручную в текущий момент.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
-                Button(onClick = { pickerForNew = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Соперник сыграл карту в ${formatTime(state.positionMatchSec.coerceAtLeast(0f))}")
+                OutlinedButton(onClick = { pickerForNew = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Добавить розыгрыш в ${formatTime(state.positionMatchSec.coerceAtLeast(0f))}")
                 }
             }
         }
@@ -168,33 +184,14 @@ fun AnalysisScreen(vm: MatchViewModel) {
         }
 
         items(state.events, key = { it.id }) { e ->
-            val card = e.topCandidate?.let { CardCatalog.byId(it.cardId) }
-            val matchTime = e.timeSec - state.matchStartVideoSec
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CostBadge(card?.let { CardCatalog.costLabel(it) } ?: "?")
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(card?.name ?: "Неизвестная карта", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        if (matchTime >= 0) "бой ${formatTime(matchTime)}" else "до начала боя — не учитывается",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (e.id in inconsistentIds) {
-                        Text("Эликсира не могло хватить — проверьте время или карту", style = MaterialTheme.typography.bodySmall, color = ErrorRed)
-                    }
-                }
-                IconButton(onClick = { vm.seekTo(e.timeSec) }) { Icon(Icons.Filled.Refresh, "Перейти к моменту") }
-                IconButton(onClick = { editingEventId = e.id }) { Icon(Icons.Filled.Edit, "Исправить карту") }
-                IconButton(onClick = { vm.removeEvent(e.id) }) { Icon(Icons.Filled.Delete, "Удалить") }
-            }
+            EventRow(
+                e = e,
+                state = state,
+                inconsistent = e.id in inconsistentIds,
+                onSeek = { vm.seekTo(e.timeSec) },
+                onEdit = { editingEventId = e.id },
+                onDelete = { vm.removeEvent(e.id) },
+            )
         }
 
         // ----- Сохранение -----
@@ -233,4 +230,139 @@ fun AnalysisScreen(vm: MatchViewModel) {
             onPick = { vm.replaceEventCard(id, it.id); editingEventId = null },
         )
     }
+    if (confirmAuto) {
+        AlertDialog(
+            onDismissRequest = { confirmAuto = false },
+            title = { Text("Заменить разметку?") },
+            text = { Text("Автораспознавание заменит текущий список розыгрышей.") },
+            confirmButton = { TextButton(onClick = { confirmAuto = false; vm.startAutoAnalysis() }) { Text("Распознать") } },
+            dismissButton = { TextButton(onClick = { confirmAuto = false }) { Text("Отмена") } },
+        )
+    }
+}
+
+@Composable
+private fun AutoRecognitionCard(state: MatchUiState, onStart: () -> Unit, onCancel: () -> Unit) {
+    SectionCard("Автораспознавание") {
+        val a = state.analysis
+        if (a?.running == true) {
+            Text("Разбираю видео… ${(a.progress * 100).toInt()}%", style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(6.dp))
+            LinearProgressIndicator(progress = { a.progress }, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Не закрывайте приложение. Обычно это занимает 1–3 минуты.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(onClick = onCancel) { Text("Отмена") }
+        } else {
+            Text(
+                "Для повторов из журнала боёв: приложение само найдёт все розыгрыши соперника, " +
+                    "их стоимость и карты, а также фактический эликсир соперника.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) { Text("Распознать автоматически") }
+            a?.error?.let {
+                Spacer(Modifier.height(6.dp))
+                Text(it, color = ErrorRed, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        state.stats?.let { s ->
+            Spacer(Modifier.height(8.dp))
+            Text("Найдено розыгрышей: ${s.plays}", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "по циклу колоды: ${s.byCycle} • по руке и стоимости: ${s.byHand}" +
+                    (if (s.ambiguous > 0) " • неоднозначно: ${s.ambiguous}" else "") +
+                    (if (s.unknown > 0) " • не определено: ${s.unknown}" else "") +
+                    (if (s.abilities > 0) " • способности: ${s.abilities}" else ""),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                "Карт соперника: ${s.clusters}, подписано автоматически: ${s.autoLabeled}. " +
+                    "Кадров: ${s.frames}, время: ${s.seconds.toInt()} с.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            val unlabeled = state.clusters.count { it.cardId == null }
+            if (unlabeled > 0) {
+                Text(
+                    "Неподписанных карт: $unlabeled — подпишите их в разделе «Колода» (один раз, дальше узнаются сами).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Warning,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EventRow(
+    e: PlayEvent,
+    state: MatchUiState,
+    inconsistent: Boolean,
+    onSeek: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val matchTime = e.timeSec - state.matchStartVideoSec
+    val name = when {
+        e.candidates.size > 1 -> e.candidates.joinToString(" или ") { state.displayName(it.cardId) } + "?"
+        e.topCandidate != null -> state.displayName(e.topCandidate!!.cardId)
+        else -> "Карта не определена"
+    }
+    val card = e.topCandidate?.let { CardCatalog.byId(state.resolve(it.cardId)) }
+    val costLabel = e.observedCost?.toString() ?: card?.let { CardCatalog.costLabel(it) } ?: "?"
+    val methodLabel = when (e.method) {
+        IdMethod.CYCLE -> "по циклу"
+        IdMethod.HAND -> "по руке"
+        IdMethod.ABILITY -> "способность"
+        IdMethod.UNKNOWN -> "не определено"
+        IdMethod.MANUAL -> "вручную"
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val thumb = state.thumbnailFor(e)
+        if (thumb != null) {
+            Image(
+                bitmap = thumb.asImageBitmap(),
+                contentDescription = name,
+                modifier = Modifier.size(width = 36.dp, height = 43.dp).clip(RoundedCornerShape(4.dp)),
+            )
+        } else {
+            CostBadge(costLabel)
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(name, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                (if (matchTime >= 0) "бой ${formatTime(matchTime)}" else "до начала боя — не учитывается") +
+                    " • $costLabel эл. • $methodLabel",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (inconsistent) {
+                Text("Эликсира не могло хватить — проверьте время или карту", style = MaterialTheme.typography.bodySmall, color = ErrorRed)
+            }
+        }
+        IconButton(onClick = onSeek) { Icon(Icons.Filled.Refresh, "Перейти к моменту") }
+        IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "Исправить карту") }
+        IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, "Удалить") }
+    }
+}
+
+/** Фактический эликсир соперника из повтора в текущий момент (если есть). */
+private fun actualAt(state: MatchUiState): Float? {
+    if (state.elixirSeries.isEmpty()) return null
+    val t = state.positionVideoSec
+    val s = state.elixirSeries.lastOrNull { it.videoTimeSec <= t } ?: return null
+    return if (t - s.videoTimeSec <= 1.0f) s.elixir else null
 }
